@@ -1,5 +1,4 @@
 import axios from 'axios'
-import co from 'co'
 import invariant from 'invariant'
 
 import * as authenticationFlow from './authenticationFlow'
@@ -108,27 +107,25 @@ export default function createScoreboardClient({
     )
   }
 
-  function resolvePlayerId(playerName) {
-    return Promise.resolve(
-      graphql({
-        query: `
-          query resolvePlayerId ($name: String!) {
-            player (name: $name) {
-              id
-            }
+  async function resolvePlayerId(playerName) {
+    const result = await graphql({
+      query: `
+        query resolvePlayerId ($name: String!) {
+          player (name: $name) {
+            id
           }
-        `,
-        variables: {
-          name: playerName,
-        },
-      }).then(result => {
-        if (result.data.player === null) {
-          return { error: 'Player not found...' }
-        } else {
-          return { playerId: result.data.player.id }
         }
-      })
-    )
+      `,
+      variables: {
+        name: playerName,
+      },
+    })
+
+    if (result.data.player === null) {
+      return { error: 'Player not found...' }
+    } else {
+      return { playerId: result.data.player.id }
+    }
   }
 
   function reservePlayerId(playerName) {
@@ -209,46 +206,39 @@ export default function createScoreboardClient({
     entry ${ENTRY}
   }`
 
-  const scoreboardClient = {
-    signUp({ username, password, email }) {
+  return {
+    async signUp({ username, password, email }) {
       invariant(typeof username === 'string', 'username must be a string')
       invariant(typeof password === 'string', 'password must be a string')
       invariant(typeof email === 'string', 'email must be a string')
-      // TODO [#632]: Convert the `signUp` method to async function (instead of using `co`) in src/online/scoreboard-system/createScoreboardClient.js
-      // See issue #575 for more details.
-      return co(function*() {
-        const { idToken } = yield* authenticationFlow.signUp(
-          username,
-          email,
-          password,
-          {
-            log: message => log('[signUp]', message),
-            userSignUp,
-            checkPlayerNameAvailability,
-            reservePlayerId,
-            ensureLink,
-          }
-        )
-        return { playerToken: yield resolvePlayerTokenFromIdToken(idToken) }
-      })
+      const { idToken } = await authenticationFlow.signUp(
+        username,
+        email,
+        password,
+        {
+          log: message => log('[signUp]', message),
+          userSignUp,
+          checkPlayerNameAvailability,
+          reservePlayerId,
+          ensureLink,
+        }
+      )
+      return { playerToken: await resolvePlayerTokenFromIdToken(idToken) }
     },
-    loginByUsernamePassword({ username, password }) {
+    async loginByUsernamePassword({ username, password }) {
       invariant(typeof username === 'string', 'username must be a string')
       invariant(typeof password === 'string', 'password must be a string')
-      // TODO [#633]: Convert the `loginByUsernamePassword` method to async function (instead of using `co`) in src/online/scoreboard-system/createScoreboardClient.js
-      return co(function*() {
-        const { idToken } = yield* authenticationFlow.loginByUsernamePassword(
-          username,
-          password,
-          {
-            log: message => log('[loginByUsernamePassword]', message),
-            usernamePasswordLogin,
-            resolvePlayerId,
-            ensureLink,
-          }
-        )
-        return { playerToken: yield resolvePlayerTokenFromIdToken(idToken) }
-      })
+      const { idToken } = await authenticationFlow.loginByUsernamePassword(
+        username,
+        password,
+        {
+          log: message => log('[loginByUsernamePassword]', message),
+          usernamePasswordLogin,
+          resolvePlayerId,
+          ensureLink,
+        }
+      )
+      return { playerToken: await resolvePlayerTokenFromIdToken(idToken) }
     },
     submitScore({ playerToken, md5, playMode, input }) {
       return graphql({
@@ -334,8 +324,6 @@ export default function createScoreboardClient({
       }).then(result => result.data.renewPlayerToken.playerToken)
     },
   }
-
-  return scoreboardClient
 }
 
 function coerceAuth0ErrorToErrorObject(err) {
